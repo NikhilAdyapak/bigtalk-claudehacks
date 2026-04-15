@@ -422,12 +422,13 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      state.myId   = data.id;
+      state.myId   = data.profile_id;
       state.myName = name;
       document.getElementById('s3RoomBadge').textContent = state.roomCode;
       setLoading(false);
       showScreen('s3');
       startPolling();
+      autoMatchAll();
     } catch (err) {
       setLoading(false);
       showToast('Could not join room. Is the server running?');
@@ -435,18 +436,92 @@
     }
   }
 
+  // ── AUTO-MATCH: fires for any new person detected ────────────
+  // matchedIds: Set of profile IDs we've already matched with
+  // matchResults: array of {person, matchData, score} sorted by score
+  if (!window._btState) window._btState = { matchedIds: new Set(), matchResults: [] };
+
+  async function autoMatchAll() {
+    const res = await fetch(`/api/room/${state.roomCode}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const others = (data.profiles || []).filter(p => p.id !== state.myId);
+    const newOthers = others.filter(p => !window._btState.matchedIds.has(p.id));
+    if (newOthers.length === 0) return;
+
+    // Show "matching..." placeholder for new arrivals
+    newOthers.forEach(p => {
+      window._btState.matchedIds.add(p.id);
+      window._btState.matchResults.push({ person: p, matchData: null, score: -1 });
+    });
+    renderRoomWithScores();
+
+    // Fire Claude matches for new people
+    for (const other of newOthers) {
+      try {
+        const r = await fetch('/api/match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room_code: state.roomCode, profile_id_1: state.myId, profile_id_2: other.id }),
+        });
+        if (!r.ok) continue;
+        const matchData = await r.json();
+        const score = matchData.result?.vibe_match_score ?? 0;
+        // Update the result for this person
+        const entry = window._btState.matchResults.find(x => x.person.id === other.id);
+        if (entry) { entry.matchData = matchData; entry.score = score; }
+      } catch (e) { /* skip */ }
+      // Re-render after each match comes back
+      window._btState.matchResults.sort((a, b) => b.score - a.score);
+      renderRoomWithScores();
+    }
+  }
+
+  function renderRoomWithScores() {
+    const grid = document.getElementById('peopleGrid');
+    grid.innerHTML = '';
+    const results = window._btState.matchResults;
+    if (results.length === 0) {
+      grid.innerHTML = '<div style="color:#aaa;text-align:center;padding:30px;grid-column:1/-1">Waiting for others to join...</div>';
+      return;
+    }
+    results.forEach(({ person, matchData, score }, idx) => {
+      const card = document.createElement('div');
+      card.className = 'person-card';
+      const interests = [...(person.anime||[]), ...(person.games||[]), ...(person.shows||[])];
+      const pending = score === -1;
+      card.innerHTML = `
+        <div class="card-name">${escHtml(person.name)}
+          ${!pending ? `<span style="color:#e94560;font-size:0.8em;margin-left:6px">#${idx+1}</span>` : ''}
+        </div>
+        <div style="font-size:1.3em;font-weight:700;color:${pending?'#666':'#e94560'};margin:4px 0">
+          ${pending ? 'Matching...' : `${score}<span style="font-size:0.55em;color:#aaa">/100 vibe</span>`}
+        </div>
+        <div class="card-chips">${interests.slice(0,5).map(i=>`<span class="chip">${escHtml(i)}</span>`).join('')}</div>
+      `;
+      if (!pending && matchData) {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', () => showMatchReveal(matchData, person.name));
+      }
+      grid.appendChild(card);
+    });
+  }
+
   // ── SCREEN 3: ROOM POLLING ─────────────────────────────────
   function startPolling() {
-    renderRoom();
+    // Reset match state on each new session
+    window._btState = { matchedIds: new Set(), matchResults: [] };
+    renderRoomWithScores();
     if (state.pollInterval) clearInterval(state.pollInterval);
-    state.pollInterval = setInterval(renderRoom, 3000);
+    state.pollInterval = setInterval(autoMatchAll, 4000);
   }
 
   async function renderRoom() {
     try {
       const res = await fetch(`/api/room/${state.roomCode}`);
       if (!res.ok) return;
-      const people = await res.json();
+      const data = await res.json();
+      const people = data.profiles || [];
       const grid = document.getElementById('peopleGrid');
       grid.innerHTML = '';
 
@@ -495,7 +570,7 @@
       const res = await fetch('/api/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user1_id: state.myId, user2_id: otherId }),
+        body: JSON.stringify({ room_code: state.roomCode, profile_id_1: state.myId, profile_id_2: otherId }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -515,7 +590,7 @@
       `<span>${escHtml(state.myName)}</span> &amp; <span>${escHtml(otherName)}</span>`;
 
     // Vibe score count-up
-    const target = data.vibe_match_score ?? 0;
+    const target = (data.result ?? data).vibe_match_score ?? 0;
     const numEl  = document.getElementById('vibeNumber');
     numEl.textContent = '0';
     let current = 0;
@@ -530,7 +605,8 @@
     const list = document.getElementById('connectionsList');
     list.innerHTML = '';
 
-    const connections = data.connections ?? [];
+    const r = data.result ?? data;
+    const connections = r.connections ?? [];
     connections.forEach((conn, i) => {
       const card = document.createElement('div');
       card.className = 'connection-card';
@@ -544,23 +620,23 @@
     });
 
     // Wild card
-    if (data.wild_card) {
+    if (r.wild_card) {
       const wc = document.createElement('div');
       wc.className = 'connection-card wildcard-card';
       wc.innerHTML = `
         <div class="conn-title">Wild Card</div>
-        <div class="conn-insight">${escHtml(data.wild_card)}</div>
+        <div class="conn-insight">${escHtml(r.wild_card)}</div>
       `;
       list.appendChild(wc);
       setTimeout(() => wc.classList.add('visible'), 200 + connections.length * 280);
     }
 
     // Opening line
-    if (data.opening_line) {
+    if (r.opening_line) {
       const bubble = document.createElement('div');
       bubble.className = 'connection-card';
       bubble.innerHTML = `
-        <div class="speech-bubble"><p>${escHtml(data.opening_line)}</p></div>
+        <div class="speech-bubble"><p>${escHtml(r.opening_line)}</p></div>
       `;
       list.appendChild(bubble);
       setTimeout(() => bubble.classList.add('visible'), 200 + (connections.length + 1) * 280);
