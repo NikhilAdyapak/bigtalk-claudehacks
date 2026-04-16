@@ -1,6 +1,6 @@
 # Big Talk — When Small Talk Ends, Big Talk Starts
 
-> UW-Madison Claude Hacks Hackathon Project
+> UW-Madison Claude Hacks Hackathon Project — a 1-hour speed hackathon organized by the Claude Builder Club
 
 ## What Is It?
 Big Talk uses Claude AI to find *surprising, non-obvious connections* between people. Enter a room code, fill out your interests (anime, games, shows, hot takes), and Claude automatically matches you with everyone else — ranking them by vibe score and generating deep conversation starters that skip the awkward small talk.
