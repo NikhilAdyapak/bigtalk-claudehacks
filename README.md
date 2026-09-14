@@ -3,15 +3,15 @@
 > UW-Madison Claude Hacks Hackathon Project — a 1-hour speed hackathon organized by the Claude Builder Club
 
 ## What Is It?
-Big Talk uses Claude AI to find *surprising, non-obvious connections* between people. Enter a room code, fill out your interests (anime, games, shows, hot takes), and Claude automatically matches you with everyone else — ranking them by vibe score and generating deep conversation starters that skip the awkward small talk.
+Big Talk uses Claude AI to suggest what people in a room have in common. Enter a room code, fill out your interests (anime, games, shows, hot takes), and Claude matches you with everyone else, ranking them by a vibe score and generating conversation starters.
 
 ## Demo Flow
 1. Everyone opens the same URL on their phone/laptop
 2. Enter a shared room code (e.g. `CS577`)
 3. Fill out your profile — takes 30 seconds
 4. Claude auto-matches you with every person in the room
-5. Cards rank in real time by vibe score (0–100)
-6. Tap any card → animated reveal with 3 non-obvious connections + a Big Talk question
+5. Cards rank in real time by vibe score (0 to 100)
+6. Tap any card for an animated reveal with 3 things you have in common and a Big Talk question
 
 ## Tech Stack
 - **Backend:** Python FastAPI + Anthropic SDK (Claude Sonnet)
